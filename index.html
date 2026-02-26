@@ -535,17 +535,36 @@ const STATE = {
 const CURRENT_YEAR = new Date().getFullYear();
 
 function getGroup(a) {
-  const hasCollege = a.collegeGradYear && String(a.collegeGradYear).trim() !== '';
-  if (!hasCollege) return 'hs';
-  const yr = parseInt(a.collegeGradYear);
-  if (isNaN(yr)) return 'hs';
-  return yr > CURRENT_YEAR ? 'college' : 'alumni';
+  const c = (a.classification || '').trim().toLowerCase();
+  if (c === 'alumni') return 'alumni';
+  if (c === 'college fellow') return 'college';
+  return 'hs';
 }
 
 const GROUP_LABELS = { hs: 'High School', college: 'College Fellows', alumni: 'Alumni' };
 const GROUP_ORDER  = ['hs', 'college', 'alumni'];
 const GROUP_WINNERS = { hs: 3, college: 4, alumni: 3 };
 const GROUP_BADGE  = { hs: 'badge-hs', college: 'badge-college', alumni: 'badge-alumni' };
+
+// Which groups each reviewer is allowed to see.
+// HS: myeisha, nadia, trinton | College + Alumni: elliot, mike, esther
+const REVIEWER_GROUPS = {
+  myeisha: ['hs'],
+  nadia:   ['hs'],
+  trinton: ['hs'],
+  elliot:  ['college', 'alumni'],
+  mike:    ['college', 'alumni'],
+  esther:  ['college', 'alumni'],
+};
+
+function getAllowedGroups(reviewerId) {
+  return REVIEWER_GROUPS[reviewerId] || ['hs', 'college', 'alumni'];
+}
+
+function getApplicantsForReviewer(reviewerId) {
+  const allowed = getAllowedGroups(reviewerId);
+  return STATE.applicants.filter(function(a) { return allowed.indexOf(getGroup(a)) !== -1; });
+}
 
 function groupedApplicants() {
   const groups = { hs: [], college: [], alumni: [] };
@@ -853,13 +872,14 @@ function renderResults() {
 function renderReviewerList() {
   const el = document.getElementById('reviewer-list');
   el.innerHTML = STATE.reviewers.filter(function(r) { return r.role === 'reviewer'; }).map(function(r) {
-    const done = STATE.applicants.filter(function(a) {
+    const myApps = getApplicantsForReviewer(r.id);
+    const done = myApps.filter(function(a) {
       const d = getReviewScores(r.id, a.id);
       return d && d.rubric && Object.keys(d.rubric).length === RUBRIC.length;
     }).length;
     return '<div class="reviewer-row">' +
       '<div><div class="reviewer-row-name">' + r.name + '</div><div class="reviewer-row-pw">Password: ' + r.password + '</div></div>' +
-      '<span class="reviewer-row-count">' + done + '/' + STATE.applicants.length + ' reviewed</span>' +
+      '<span class="reviewer-row-count">' + done + '/' + myApps.length + ' reviewed</span>' +
     '</div>';
   }).join('');
 }
@@ -880,10 +900,12 @@ async function addReviewer() {
 function renderReviewerSidebar() {
   const el     = document.getElementById('rv-sidebar');
   const u      = STATE.currentUser;
-  const groups = groupedApplicants();
+  const myList = getApplicantsForReviewer(u.id);
+  const groups = { hs: [], college: [], alumni: [] };
+  myList.forEach(function(a) { groups[getGroup(a)].push(a); });
 
-  if (STATE.applicants.length === 0) {
-    el.innerHTML = '<p style="color:var(--text-faint);font-size:11px;padding:16px">No applicants loaded.</p>';
+  if (myList.length === 0) {
+    el.innerHTML = '<p style="color:var(--text-faint);font-size:11px;padding:16px">No applicants assigned.</p>';
     return;
   }
 
@@ -905,8 +927,8 @@ function renderReviewerSidebar() {
       }).join('');
   }).join('');
 
-  const total = STATE.applicants.length;
-  const done  = STATE.applicants.filter(function(a) {
+  const total = myList.length;
+  const done  = myList.filter(function(a) {
     const d = getReviewScores(u.id, a.id);
     return d && d.rubric && Object.keys(d.rubric).length === RUBRIC.length;
   }).length;
